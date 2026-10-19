@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>画廊自测 · ImageGrab</title>
+  <link rel="stylesheet" href="../gallery.css">
+  <style>
+    .harness { margin-top: 20px; padding: 16px; border: 1px dashed #94a3b8; border-radius: 14px; background: #fff; color: #0f172a; }
+    .harness h2 { font-size: 15px; margin: 0 0 10px; }
+    .harness pre { margin: 0 0 14px; padding: 12px; background: #0f172a; color: #e2e8f0; border-radius: 10px; overflow: auto; font-size: 12px; line-height: 1.6; }
+    .harness .pass { color: #34d399; }
+    .harness .fail { color: #f87171; }
+    @media (prefers-color-scheme: dark) { .harness { background: #121a2e; color: #e2e8f0; border-color: #3b4a6b; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v11"></path>
+            <path d="M7.5 10.5 12 15l4.5-4.5"></path>
+            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+          </svg>
+        </span>
+        <div class="brand__text">
+          <h1 class="brand__title">图提取 <span>ImageGrab</span></h1>
+          <p class="brand__tagline">画廊页自测（chrome API 使用本地桩）</p>
+        </div>
+      </div>
+      <a class="btn btn--ghost" id="page-link" href="#" target="_blank" rel="noreferrer noopener" hidden>打开商品页</a>
+    </header>
+
+    <main class="main">
+      <section class="capture">
+        <h2 class="capture__title" id="capture-title">正在读取提取结果…</h2>
+        <p class="capture__meta" id="capture-meta"></p>
+      </section>
+
+      <section class="panel toolbar" id="toolbar">
+        <label class="select-all">
+          <input type="checkbox" id="btn-select-all" checked>
+          <span>全选</span>
+        </label>
+        <button type="button" class="btn btn--ghost" id="btn-invert">反选</button>
+        <span class="selected" id="selected-count">已选 0 / 0</span>
+        <span class="toolbar__spacer"></span>
+        <label class="switch" title="将 JPEG / WebP / AVIF 转为 PNG。首次转换会请求图片域名权限。">
+          <input type="checkbox" id="png-toggle" checked>
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text">转换为 PNG</span>
+        </label>
+        <button type="button" class="btn btn--primary" id="btn-download" disabled>下载选中</button>
+      </section>
+
+      <p class="hint" id="hint">
+        下载时勾选「转换为 PNG」会按需申请图片域名权限；拒绝授权也会自动改为直接下载原图。
+      </p>
+
+      <div class="banner" id="banner" role="status" aria-live="polite" hidden></div>
+
+      <section class="panel progress" id="progress" hidden>
+        <div class="progress__track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress__bar" id="progress-bar"></div>
+        </div>
+        <p class="progress__text" id="progress-text"></p>
+      </section>
+
+      <section class="grid" id="grid" aria-label="提取到的图片"></section>
+
+      <section class="state" id="empty-state" hidden>
+        <h2>没有可显示的图片</h2>
+        <p>回到商品页滚动加载图片后，重新点击「获取图片」。</p>
+      </section>
+
+      <section class="state state--fatal" id="fatal" hidden>
+        <h2>无法打开这次提取结果</h2>
+        <p id="fatal-text"></p>
+        <p class="state__hint">请回到商品详情页，重新点击右下角的「获取图片」。</p>
+      </section>
+
+      <section class="harness">
+        <h2>自测报告（Mock chrome.storage / permissions / downloads）</h2>
+        <pre id="harness-checks">等待下载完成…</pre>
+        <pre id="harness-report">{}</pre>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>图提取 ImageGrab · 开发自测页</span>
+      <span>不会写入真实下载目录</span>
+    </footer>
+  </div>
+
+  <script>
+    (function setupChromeStub() {
+      var records = [];
+      var listeners = [];
+      var nextId = 100;
+
+      function makeImage(width, height, type) {
+        var canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        var ctx = canvas.getContext('2d');
+        var gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#4f46e5');
+        gradient.addColorStop(1, type === 'image/jpeg' ? '#0ea5e9' : type === 'image/webp' ? '#10b981' : '#f59e0b');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.font = Math.round(Math.min(width, height) / 7) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(width + '×' + height, width / 2, height / 2);
+        return canvas.toDataURL(type, 0.92);
+      }
+
+      var png = makeImage(400, 300, 'image/png');
+      var jpg = makeImage(800, 600, 'image/jpeg');
+      var webp = makeImage(640, 640, 'image/webp');
+
+      var denyMode = new URLSearchParams(location.search).get('deny') === '1';
+      var images = [
+        { url: png, width: 400, height: 300, source: 'src' },
+        { url: jpg, width: 800, height: 600, source: 'src' },
+        { url: webp, width: 640, height: 640, source: 'background-image' },
+        {
+          url: location.origin + '/tools/fixtures/missing.png',
+          width: 0,
+          height: 0,
+          source: 'data-src',
+          unknown: true
+        }
+      ];
+      if (!denyMode) {
+        // 模拟防盗链/风控返回 200 + HTML，转 PNG 流程应识别并失败，而不是保存成假图片。
+        images.push({
+          url: location.origin + '/tools/content-harness.html',
+          width: 0,
+          height: 0,
+          source: 'src',
+          unknown: true
+        });
+      }
+
+      var capture = {
+        id: 'harness',
+        siteId: 'harness',
+        siteName: '本地自测',
+        pageUrl: 'https://item.taobao.com/item.htm?id=1',
+        title: 'ImageGrab 画廊自测商品',
+        capturedAt: Date.now(),
+        stats: { scanned: 7, measured: 4, kept: images.length },
+        images: images
+      };
+
+      var chromeStub = {
+        storage: {
+          session: {
+            get: function () {
+              var data = {};
+              data['capture:harness'] = capture;
+              return Promise.resolve(data);
+            }
+          }
+        },
+        permissions: {
+          request: function (options) {
+            window.__harnessPermission = options;
+            var deny = new URLSearchParams(location.search).get('deny') === '1';
+            return Promise.resolve(!deny);
+          }
+        },
+        downloads: {
+          download: function (options) {
+            return fetch(options.url)
+              .then(function (response) {
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.blob();
+              })
+              .then(function (blob) {
+                var id = nextId;
+                nextId += 1;
+                records.push({
+                  id: id,
+                  filename: options.filename,
+                  type: blob.type,
+                  size: blob.size
+                });
+                setTimeout(function () {
+                  listeners.forEach(function (listener) {
+                    listener({ id: id, state: { current: 'complete' } });
+                  });
+                }, 150);
+                return id;
+              });
+          },
+          onChanged: {
+            addListener: function (listener) {
+              listeners.push(listener);
+            }
+          },
+          search: function (query) {
+            return Promise.resolve(
+              records
+                .filter(function (record) { return record.id === query.id; })
+                .map(function (record) { return { id: record.id, state: 'complete' }; })
+            );
+          }
+        }
+      };
+
+      try {
+        Object.defineProperty(window, 'chrome', {
+          value: chromeStub,
+          configurable: true,
+          writable: true
+        });
+      } catch (error) {
+        window.chrome = window.chrome || {};
+        Object.assign(window.chrome, chromeStub);
+      }
+
+      window.__harness = { records: records, capture: capture, permission: function () { return window.__harnessPermission; } };
+    })();
+  </script>
+  <script src="../gallery.js"></script>
+  <script>
+    (function watchHarness() {
+      var checksEl = document.getElementById('harness-checks');
+      var reportEl = document.getElementById('harness-report');
+
+      setInterval(function () {
+        var records = window.__harness.records;
+        var statuses = Array.prototype.map.call(document.querySelectorAll('.card'), function (card) {
+          return card.dataset.status;
+        });
+        var done = statuses.filter(function (status) { return status === 'done'; }).length;
+        var failed = statuses.filter(function (status) { return status === 'failed'; }).length;
+        var selectedText = document.getElementById('selected-count').textContent;
+        var progressText = document.getElementById('progress-text').textContent;
+        var permission = window.__harnessPermission;
+        var denyMode = new URLSearchParams(location.search).get('deny') === '1';
+
+        var checks = denyMode
+          ? [
+              ['拒绝授权后仍产生 3 条下载记录', records.length === 3],
+              ['拒绝授权后保留原格式（不再全部转 PNG）', records.length === 3 && records.some(function (record) { return record.type !== 'image/png'; })],
+              ['拒绝授权后 3 张完成、1 张失败', done === 3 && failed === 1],
+              ['进度文案显示原图直下', progressText.indexOf('原图直下 3 张') !== -1],
+              ['仍然发起了权限请求', !!permission && permission.origins && permission.origins.length === 1],
+              ['PNG 选项保持勾选', document.getElementById('png-toggle').checked === true]
+            ]
+          : [
+              ['产生了 3 条下载记录（缺失图 / HTML 响应应失败）', records.length === 3],
+              ['3 条记录的输出格式都是 PNG', records.length === 3 && records.every(function (record) { return record.type === 'image/png'; })],
+              ['文件名位于 ImageGrab/harness/ 下', records.length === 3 && records.every(function (record) { return record.filename.indexOf('ImageGrab/harness/') === 0; })],
+              ['3 张完成、2 张失败', done === 3 && failed === 2],
+              ['HTML 响应被判为非图片', statuses[4] === 'failed'],
+              ['进度文案包含失败数量', progressText.indexOf('失败 2 张') !== -1],
+              ['PNG 选项保持勾选', document.getElementById('png-toggle').checked === true],
+              ['权限请求只包含图片域名', !!permission && permission.origins && permission.origins.length === 1 && permission.origins[0].indexOf('127.0.0.1') !== -1]
+            ];
+
+        checksEl.innerHTML = checks.map(function (check) {
+          return '<span class="' + (check[1] ? 'pass' : 'fail') + '">' + (check[1] ? 'PASS' : 'FAIL') + '</span> · ' + check[0];
+        }).join('<br>') + '<br><br>' + (checks.every(function (c) { return c[1]; }) ? 'ALL CHECKS PASSED' : 'WAITING / FAILED');
+
+        reportEl.textContent = JSON.stringify({
+          selected: selectedText,
+          progress: progressText,
+          cardStatuses: statuses,
+          permissionRequest: permission || null,
+          records: records
+        }, null, 2);
+      }, 400);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>ImageGrab 浮动按钮自测</title>
+  <link rel="stylesheet" href="../content.css">
+  <style>
+    body { font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 24px; color: #0f172a; padding-bottom: 140px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    .gallery { display: flex; flex-wrap: wrap; gap: 16px; margin: 18px 0; }
+    .gallery img { width: 180px; height: 180px; object-fit: cover; border: 1px solid #e2e8f0; }
+    .icon { width: 48px; height: 48px; }
+    #report { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; background: #f8fafc; }
+    .pass { color: #047857; font-weight: 600; }
+    .fail { color: #b91c1c; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>content.js 浮动按钮 / 消息自测</h1>
+  <p>页面模拟商品详情页，右下角应出现「获取图片」按钮。点击后检查扫描与消息传递。</p>
+
+  <div class="gallery">
+    <img src="fixtures/800.png" alt="800">
+    <img src="fixtures/640.png" alt="640">
+    <img class="icon" src="fixtures/48.png" alt="48">
+  </div>
+
+  <div id="report">等待点击…</div>
+
+  <script>
+    window.__IMAGEGRAB_TEST_HOOK__ = true;
+    window.__IMAGEGRAB_TEST_SITE__ = {
+      id: 'harness',
+      name: '本地自测',
+      selectors: ['.gallery img'],
+      bgSelectors: []
+    };
+    window.chrome = {
+      runtime: {
+        onMessage: { addListener: function () {} },
+        sendMessage: function (message) {
+          window.__sent = message;
+          return Promise.resolve({ ok: true, count: message.payload.images.length });
+        }
+      }
+    };
+  </script>
+  <script src="../content.js"></script>
+  <script>
+    (function watchUi() {
+      var sentAt = 0;
+      var snapshot = null;
+
+      function collect() {
+        var host = document.getElementById('igrab-host');
+        var button = host && host.querySelector('.igrab-fab');
+        var count = host && host.querySelector('.igrab-count');
+        var toast = host && host.querySelector('.igrab-toast');
+        var sent = window.__sent;
+
+        if (sent && !sentAt) {
+          sentAt = Date.now();
+          setTimeout(function () {
+            snapshot = {
+              label: button ? button.querySelector('.igrab-label').textContent : '',
+              count: count ? count.textContent : '',
+              countHidden: count ? count.hidden : true,
+              toast: toast ? toast.textContent : '',
+              toastVisible: toast ? toast.classList.contains('is-visible') : false
+            };
+            render();
+          }, 350);
+        }
+
+        render();
+
+        function render() {
+          var names = sent
+            ? sent.payload.images.map(function (item) {
+                return new URL(item.url).pathname.split('/').pop();
+              })
+            : [];
+
+          var checks = [
+            ['浮动按钮已挂载到页面', !!button],
+            ['初始文案包含「获取图片」', !!button && button.textContent.indexOf('获取图片') !== -1],
+            ['点击后发送 IGRAB_CAPTURE', !!sent && sent.type === 'IGRAB_CAPTURE'],
+            ['消息里包含 2 张图片（48px 图标被过滤）', !!sent && sent.payload.images.length === 2],
+            ['消息包含 800.png / 640.png', names.indexOf('800.png') !== -1 && names.indexOf('640.png') !== -1],
+            ['按钮显示数量角标 2', !!snapshot && snapshot.count === '2' && snapshot.countHidden === false],
+            ['按钮切换为「已获取」', !!snapshot && snapshot.label === '已获取'],
+            ['出现成功提示 toast', !!snapshot && snapshot.toastVisible && snapshot.toast.indexOf('已提取 2 张图片') !== -1]
+          ];
+
+          var html = checks.map(function (check) {
+            return '<div><span class="' + (check[1] ? 'pass' : 'fail') + '">' +
+              (check[1] ? 'PASS' : 'PENDING/FAIL') + '</span> · ' + check[0] + '</div>';
+          }).join('');
+
+          var allPassed = checks.every(function (check) { return check[1]; });
+          document.getElementById('report').innerHTML =
+            '<div style="font-weight:700;margin-bottom:8px;color:' + (allPassed ? '#047857' : '#b45309') + '">' +
+            (allPassed ? 'ALL CHECKS PASSED' : '等待点击按钮 / 检查中…') + '</div>' + html;
+          document.title = (allPassed ? 'PASS ' : 'RUNNING ') + '浮动按钮自测';
+        }
+      }
+
+      setInterval(collect, 250);
+      collect();
+    })();
+  </script>
+</body>
+</html>

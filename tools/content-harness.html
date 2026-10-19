@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>ImageGrab content.js 自测</title>
+  <style>
+    body { font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 24px; color: #0f172a; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    .gallery { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; margin: 20px 0; }
+    .gallery img { border: 1px solid #e2e8f0; max-width: 240px; height: auto; }
+    .bg { border: 1px solid #e2e8f0; }
+    #results { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; background: #f8fafc; }
+    .pass { color: #047857; font-weight: 600; }
+    .fail { color: #b91c1c; font-weight: 600; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 10px; overflow: auto; font-size: 12px; }
+    .summary { font-weight: 700; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>content.js 提取自测</h1>
+  <p>按钮不会出现（当前是 localhost，不属于支持的站点），下面的脚本直接调用内部提取流程。</p>
+
+  <div class="gallery">
+    <img src="fixtures/400.png" width="400" height="400" alt="main 400">
+    <!-- 阿里 CDN 缩略图后缀应被去重，不会产生额外请求 -->
+    <img src="fixtures/400.png_430x430q90.png" alt="duplicate variant">
+    <!-- 已加载的小缩略图与懒加载原图共用同一个 dedupe key，应升级为原图 -->
+    <img src="fixtures/900.png_100x100q90.png" data-src="fixtures/900.png" alt="small thumb with lazy original">
+    <img src="fixtures/48.png" width="48" height="48" alt="icon 48">
+    <img src="fixtures/600x120.png" alt="detail slice 600x120">
+    <!-- 懒加载：只有 data-src -->
+    <img data-src="fixtures/640.png" width="640" height="640" alt="lazy 640">
+    <!-- srcset 应选择 800w -->
+    <img src="fixtures/200.png" srcset="fixtures/200.png 200w, fixtures/800.png 800w" sizes="100vw" alt="srcset">
+    <img src="fixtures/loading.gif" alt="placeholder">
+    <img src="fixtures/logo-big.png" width="400" height="400" alt="logo">
+    <div class="bg" style="width:320px;height:320px;background-image:url('fixtures/320.png')"></div>
+  </div>
+
+  <div id="results">运行中…</div>
+  <pre id="raw"></pre>
+
+  <script>
+    window.__IMAGEGRAB_TEST_HOOK__ = true;
+    window.chrome = window.chrome || {};
+    window.chrome.runtime = { onMessage: { addListener: function () {} } };
+  </script>
+  <script src="../content.js"></script>
+  <script>
+    (async function run() {
+      const lines = [];
+      const add = (ok, label, detail) => lines.push({ ok: !!ok, label, detail: detail || '' });
+
+      try {
+        const hook = window.__IMAGEGRAB_TEST__;
+        if (!hook) throw new Error('content.js 未暴露测试钩子');
+
+        add(
+          hook.normalizeUrl('//img.alicdn.com/a.jpg') === 'https://img.alicdn.com/a.jpg',
+          '协议相对 URL 补全为 https'
+        );
+        add(hook.normalizeUrl('data:image/png;base64,AAAA') === null, '过滤 data: URL');
+        add(hook.parseSrcset('a.jpg 200w, b.jpg 800w') === 'b.jpg', 'srcset 选择最大候选');
+        add(
+          hook.dedupeKey('https://img.alicdn.com/a.jpg_430x430q90.jpg') ===
+            hook.dedupeKey('https://img.alicdn.com/a.jpg_800x800.jpg'),
+          '阿里 CDN 缩略图/原图归并为同一 key'
+        );
+        add(
+          hook.dedupeKey('https://img14.360buyimg.com/n1/s450x450_jfs/t1/1/a.jpg') ===
+            hook.dedupeKey('https://img14.360buyimg.com/n0/jfs/t1/1/a.jpg'),
+          '京东 CDN 缩略图/原图归并为同一 key'
+        );
+        add(hook.urlQuality('https://img.alicdn.com/a.jpg_430x430q90.jpg') === 'resized', '阿里缩略图识别为 resized');
+        add(hook.urlQuality('https://img.alicdn.com/a.jpg') === 'original', '阿里原图识别为 original');
+        add(
+          hook.urlQuality('https://img14.360buyimg.com/n1/s450x450_jfs/t1/a.jpg') === 'resized',
+          '京东缩略图识别为 resized'
+        );
+        add(hook.urlQuality('https://img14.360buyimg.com/n0/jfs/t1/a.jpg') === 'original', '京东原图识别为 original');
+        add(
+          hook.urlQuality('https://img.pddpic.com/a.jpg?imageView2/2/w/800') === 'resized',
+          '拼多多缩放参数识别为 resized'
+        );
+        add(hook.isBigEnough(48, 48) === false, '48x48 图标被尺寸门槛过滤');
+        add(hook.isBigEnough(600, 120) === true, '600x120 详情切片被保留');
+
+        const adapter = {
+          id: 'harness',
+          name: '自测',
+          selectors: ['.gallery img'],
+          bgSelectors: ['.bg'],
+        };
+        const payload = await hook.captureImages(adapter, function () {});
+        const names = payload.images.map((item) => new URL(item.url).pathname.split('/').pop());
+        const counts = names.reduce(function (acc, name) {
+          acc[name] = (acc[name] || 0) + 1;
+          return acc;
+        }, {});
+
+        add(payload.images.length === 6, '结果数量为 6', '实际 ' + payload.images.length + '：' + names.join(', '));
+        add(counts['400.png'] === 1, '重复变体被去重', '400.png 出现 ' + (counts['400.png'] || 0) + ' 次');
+        add(!names.includes('48.png'), '小图标被过滤');
+        add(!names.includes('loading.gif'), '占位图被关键词过滤');
+        add(!names.includes('logo-big.png'), 'logo 图被关键词过滤');
+        add(names.includes('640.png'), 'data-src 懒加载图片被提取');
+        add(names.includes('320.png'), 'background-image 被提取');
+        add(counts['800.png'] === 1, 'srcset 只保留 800w 候选');
+        add(names.includes('900.png'), '未加载的原图覆盖已加载的小缩略图');
+        add(!names.some(function (name) { return name.indexOf('900.png_') === 0; }), '尺寸后缀变体未被单独保留');
+
+        const byName = {};
+        payload.images.forEach(function (item) {
+          byName[new URL(item.url).pathname.split('/').pop()] = item;
+        });
+        add(byName['800.png'] && byName['800.png'].width === 800, 'srcset 尺寸为 800x800');
+        add(byName['900.png'] && byName['900.png'].width === 900, '小缩略图对应的原图尺寸为 900x900');
+        add(byName['640.png'] && byName['640.png'].width === 640, '懒加载图片尺寸为 640x640');
+        add(byName['320.png'] && byName['320.png'].width === 320, '背景图尺寸为 320x320');
+        add(names[0] === '900.png', '结果按优先级/面积排序', '首项：' + names[0]);
+        add(payload.images.every(function (item) { return !item.unknown; }), '所有结果都测到了真实尺寸');
+
+        document.getElementById('raw').textContent = JSON.stringify(payload, null, 2);
+      } catch (error) {
+        lines.push({ ok: false, label: '执行异常', detail: String((error && error.stack) || error) });
+      }
+
+      const passed = lines.filter(function (line) { return line.ok; }).length;
+      const summary = passed + ' / ' + lines.length + ' 项通过';
+      const rows = lines.map(function (line) {
+        return '<div><span class="' + (line.ok ? 'pass' : 'fail') + '">' +
+          (line.ok ? 'PASS' : 'FAIL') + '</span> · ' + line.label +
+          (line.detail ? ' <span style="color:#64748b">（' + line.detail + '）</span>' : '') +
+          '</div>';
+      });
+      document.getElementById('results').innerHTML =
+        '<div class="summary" style="color:' + (passed === lines.length ? '#047857' : '#b91c1c') + '">' +
+        summary + '</div>' + rows.join('');
+      document.title = (passed === lines.length ? 'PASS ' : 'FAIL ') + summary;
+    })();
+  </script>
+</body>
+</html>

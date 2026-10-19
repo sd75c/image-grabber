@@ -1,0 +1,22 @@
+# 依赖与构建产物（当前项目没有构建步骤，保留以防后续引入）
+node_modules/
+dist/
+build/
+*.zip
+*.crx
+*.pem
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*~
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+chrome-profile/
+.igrab-profile/

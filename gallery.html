@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>图提取 ImageGrab</title>
+  <link rel="icon" type="image/png" href="icons/icon32.png">
+  <link rel="stylesheet" href="gallery.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v11"></path>
+            <path d="M7.5 10.5 12 15l4.5-4.5"></path>
+            <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path>
+          </svg>
+        </span>
+        <div class="brand__text">
+          <h1 class="brand__title">图提取 <span>ImageGrab</span></h1>
+          <p class="brand__tagline">筛选、转换并批量下载商品图片</p>
+        </div>
+      </div>
+      <a class="btn btn--ghost" id="page-link" href="#" target="_blank" rel="noreferrer noopener" hidden>打开商品页</a>
+    </header>
+
+    <main class="main">
+      <section class="capture">
+        <h2 class="capture__title" id="capture-title">正在读取提取结果…</h2>
+        <p class="capture__meta" id="capture-meta"></p>
+      </section>
+
+      <section class="panel toolbar" id="toolbar">
+        <label class="select-all">
+          <input type="checkbox" id="btn-select-all" checked>
+          <span>全选</span>
+        </label>
+        <button type="button" class="btn btn--ghost" id="btn-invert">反选</button>
+        <span class="selected" id="selected-count">已选 0 / 0</span>
+        <span class="toolbar__spacer"></span>
+        <label class="switch" title="将 JPEG / WebP / AVIF 转为 PNG。首次转换会请求图片域名权限。">
+          <input type="checkbox" id="png-toggle" checked>
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text">转换为 PNG</span>
+        </label>
+        <button type="button" class="btn btn--primary" id="btn-download" disabled>下载选中</button>
+      </section>
+
+      <p class="hint" id="hint">
+        下载时勾选「转换为 PNG」会按需申请图片域名权限；拒绝授权也会自动改为直接下载原图。
+      </p>
+
+      <div class="banner" id="banner" role="status" aria-live="polite" hidden></div>
+
+      <section class="panel progress" id="progress" hidden>
+        <div class="progress__track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress__bar" id="progress-bar"></div>
+        </div>
+        <p class="progress__text" id="progress-text"></p>
+      </section>
+
+      <section class="grid" id="grid" aria-label="提取到的图片"></section>
+
+      <section class="state" id="empty-state" hidden>
+        <h2>没有可显示的图片</h2>
+        <p>回到商品页滚动加载图片后，重新点击「获取图片」。</p>
+      </section>
+
+      <section class="state state--fatal" id="fatal" hidden>
+        <h2>无法打开这次提取结果</h2>
+        <p id="fatal-text"></p>
+        <p class="state__hint">请回到商品详情页，重新点击右下角的「获取图片」。</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>图提取 ImageGrab · 图片仅保存在本机</span>
+      <span>淘宝 / 天猫 / 京东 / 拼多多</span>
+    </footer>
+  </div>
+
+  <script src="gallery.js"></script>
+</body>
+</html>
